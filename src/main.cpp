@@ -57,11 +57,6 @@ void CecAlert(void *, const CEC::libcec_alert type, const CEC::libcec_parameter 
     }
 }
 
-void thread_sleep(uint milliseconds)
-{
-    this_thread::sleep_for(chrono::milliseconds(milliseconds));
-}
-
 void SetTVState(bool on)
 {
     CEC::ICECAdapter *parser;
@@ -126,15 +121,15 @@ void SetTVState(bool on)
             {
                 cout << "Sending standby ... ";
                 parser->StandbyDevices((CEC::cec_logical_address)0);
+
+                // For some reason my Sony Bravia TV turns back on if I don't set this.
+                cout << "Sleeping for 5 seconds" << endl;
+                g_usleep(5000);
             }
 
             cout << "complete" << endl;
         }
     }
-
-    // For some reason my Sony Bravia TV turns back on if I don't set this.
-    cout << "Sleeping for 2 seconds" << endl;
-    g_usleep(2000);
 
     parser->Close();
 
