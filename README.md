@@ -8,5 +8,5 @@ make
 
 # Run
 
-./gnome-cec
+./gnome-cec-screensaver
 
