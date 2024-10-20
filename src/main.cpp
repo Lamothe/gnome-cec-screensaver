@@ -57,9 +57,46 @@ void CecAlert(void *, const CEC::libcec_alert type, const CEC::libcec_parameter 
     }
 }
 
-void SetTVState(bool on)
+void SetTVState(CEC::ICECAdapter *adapter, bool on)
 {
-    CEC::ICECAdapter *parser;
+    if (on)
+    {
+        cout << "Sending power on ... ";
+        adapter->PowerOnDevices((CEC::cec_logical_address)0);
+    }
+    else
+    {
+        cout << "Sending standby ... ";
+        adapter->StandbyDevices((CEC::cec_logical_address)0);
+    }
+}
+
+static void on_active_changed(
+    GDBusProxy *proxy,
+    const gchar *sender_name,
+    const gchar *signal_name,
+    GVariant *parameter,
+    CEC::ICECAdapter *adapter)
+{
+    if (g_strcmp0(signal_name, "ActiveChanged") != 0)
+    {
+        return;
+    }
+
+    gboolean active;
+    g_variant_get(parameter, "(b)", &active);
+    cout << "Screensaver state changed: " << (active ? "Active" : "Not active") << endl;
+
+    // Turn TV off if screensaver is active and turn it on when not active.
+    SetTVState(adapter, !active);
+}
+
+int main(int argc, char *argv[])
+{
+    cout << "GNOME CEC Screensaver" << endl;
+
+    // Setup CEC
+    CEC::ICECAdapter *adapter;
     CEC::ICECCallbacks callbacks;
     CEC::libcec_configuration config;
 
@@ -78,18 +115,19 @@ void SetTVState(bool on)
     config.deviceTypes.Add(CEC::CEC_DEVICE_TYPE_RECORDING_DEVICE);
 
     cout << "Loading libcec" << endl;
-    parser = LibCecInitialise(&config);
+    adapter = LibCecInitialise(&config);
 
-    if (parser == NULL)
+    if (adapter == NULL)
     {
         cout << "Failed to initialise CEC library" << endl;
     }
     cout << "CEC parser initialised" << endl;
 
-    parser->InitVideoStandalone();
+    adapter->InitVideoStandalone();
 
     CEC::cec_adapter_descriptor devices[10];
-    uint8_t deviceCount = parser->DetectAdapters(devices, 10, NULL, true);
+    uint8_t deviceCount = adapter->DetectAdapters(devices, 10, NULL, true);
+    string port;
     if (deviceCount <= 0)
     {
         cout << "No devices found" << endl;
@@ -102,67 +140,20 @@ void SetTVState(bool on)
         {
             cout << i << ": " << devices[i].strComName << endl;
         }
-        string port = devices[0].strComName;
 
-        cout << "Opening device " << port << endl;
-
-        if (!parser->Open(port.c_str()))
-        {
-            cout << "Failed to open device" << endl;
-        }
-        else
-        {
-            if (on)
-            {
-                cout << "Sending power on ... ";
-                parser->PowerOnDevices((CEC::cec_logical_address)0);
-            }
-            else
-            {
-                cout << "Sending standby ... ";
-                parser->StandbyDevices((CEC::cec_logical_address)0);
-
-                // For some reason my Sony Bravia TV turns back on if I don't set this.
-                cout << "Sleeping for 5 seconds" << endl;
-                g_usleep(5000000);
-            }
-
-            cout << "complete" << endl;
-        }
+        port = devices[0].strComName;
     }
 
-    parser->Close();
+    cout << "Opening device " << port << endl;
 
-    UnloadLibCec(parser);
-    cout << "CEC parser unloaded" << endl;
-}
-
-static void on_active_changed(
-    GDBusProxy *proxy,
-    const gchar *sender_name,
-    const gchar *signal_name,
-    GVariant *parameter,
-    gpointer user_data)
-{
-    if (g_strcmp0(signal_name, "ActiveChanged") != 0)
+    if (!adapter->Open(port.c_str()))
     {
-        return;
+        cout << "Failed to open device" << endl;
+        return -1;
     }
 
-    gboolean active;
-    g_variant_get(parameter, "(b)", &active);
-    cout << "Screensaver state changed: " << (active ? "Active" : "Not active") << endl;
-
-    // Turn TV off if screensaver is active and turn it on when not active.
-    SetTVState(!active);
-}
-
-int main(int argc, char *argv[])
-{
     GMainLoop *loop = g_main_loop_new(nullptr, FALSE);
     GError *error = nullptr;
-
-    cout << "GNOME CEC Screensaver" << endl;
 
     // Connect to the session bus
     GDBusConnection *connection = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error);
@@ -193,7 +184,7 @@ int main(int argc, char *argv[])
     }
 
     // Connect to the "ActiveChanged" signal
-    g_signal_connect(proxy, "g-signal", G_CALLBACK(on_active_changed), nullptr);
+    g_signal_connect(proxy, "g-signal", G_CALLBACK(on_active_changed), adapter);
 
     cout << "Listening for screensaver events" << endl;
 
@@ -201,6 +192,11 @@ int main(int argc, char *argv[])
     g_main_loop_run(loop);
 
     // Clean up
+    adapter->Close();
+
+    UnloadLibCec(adapter);
+    cout << "CEC parser unloaded" << endl;
+
     g_object_unref(proxy);
     g_object_unref(connection);
     g_main_loop_unref(loop);
