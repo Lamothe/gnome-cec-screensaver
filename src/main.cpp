@@ -123,8 +123,8 @@ void SetTVState(bool on)
                 parser->StandbyDevices((CEC::cec_logical_address)0);
 
                 // For some reason my Sony Bravia TV turns back on if I don't set this.
-                cout << "Sleeping for 10 seconds" << endl;
-                g_usleep(10000);
+                cout << "Sleeping for 5 seconds" << endl;
+                g_usleep(5000000);
             }
 
             cout << "complete" << endl;
