@@ -123,8 +123,8 @@ void SetTVState(bool on)
                 parser->StandbyDevices((CEC::cec_logical_address)0);
 
                 // For some reason my Sony Bravia TV turns back on if I don't set this.
-                cout << "Sleeping for 5 seconds" << endl;
-                g_usleep(5000);
+                cout << "Sleeping for 10 seconds" << endl;
+                g_usleep(10000);
             }
 
             cout << "complete" << endl;
@@ -162,7 +162,7 @@ int main(int argc, char *argv[])
     GMainLoop *loop = g_main_loop_new(nullptr, FALSE);
     GError *error = nullptr;
 
-    cout << "GNOME CEC" << endl;
+    cout << "GNOME CEC Screensaver" << endl;
 
     // Connect to the session bus
     GDBusConnection *connection = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error);
@@ -194,6 +194,8 @@ int main(int argc, char *argv[])
 
     // Connect to the "ActiveChanged" signal
     g_signal_connect(proxy, "g-signal", G_CALLBACK(on_active_changed), nullptr);
+
+    cout << "Listening for screensaver events" << endl;
 
     // Start the main loop
     g_main_loop_run(loop);
