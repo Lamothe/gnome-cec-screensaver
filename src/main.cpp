@@ -13,6 +13,11 @@ void CecLogMessage(void *, const CEC::cec_log_message *message)
 {
     string level;
 
+    if (message->level >= CEC::CEC_LOG_WARNING)
+    {
+        return;
+    }
+
     switch (message->level)
     {
     case CEC::CEC_LOG_ERROR:
@@ -61,17 +66,17 @@ void SetTVState(CEC::ICECAdapter *adapter, bool on)
 {
     if (on)
     {
-        cout << "Sending power on ... ";
+        cout << "Sending power on" << endl;
         adapter->PowerOnDevices((CEC::cec_logical_address)0);
     }
     else
     {
-        cout << "Sending standby ... ";
+        cout << "Sending standby" << endl;
         adapter->StandbyDevices((CEC::cec_logical_address)0);
     }
 }
 
-static void on_active_changed(
+static void on_screensaver_signal(
     GDBusProxy *proxy,
     const gchar *sender_name,
     const gchar *signal_name,
@@ -85,7 +90,7 @@ static void on_active_changed(
 
     gboolean active;
     g_variant_get(parameter, "(b)", &active);
-    cout << "Screensaver state changed: " << (active ? "Active" : "Not active") << endl;
+    cout << "Screensaver state changed to " << (active ? "Active" : "Not active") << endl;
 
     // Turn TV off if screensaver is active and turn it on when not active.
     SetTVState(adapter, !active);
@@ -93,113 +98,119 @@ static void on_active_changed(
 
 int main(int argc, char *argv[])
 {
-    cout << "GNOME CEC Screensaver" << endl;
+    string applicationName = "GNOME CEC Screensaver";
+
+    cout << applicationName << endl;
 
     // Setup CEC
-    CEC::ICECAdapter *adapter;
     CEC::ICECCallbacks callbacks;
-    CEC::libcec_configuration config;
-
     callbacks.Clear();
     callbacks.logMessage = &CecLogMessage;
     callbacks.keyPress = &CecKeyPress;
     callbacks.commandReceived = &CecCommand;
     callbacks.alert = &CecAlert;
 
+    CEC::libcec_configuration config;
     config.Clear();
-    snprintf(config.strDeviceName, LIBCEC_OSD_NAME_SIZE, "GNOME CEC");
+    snprintf(config.strDeviceName, LIBCEC_OSD_NAME_SIZE, applicationName.c_str());
     config.clientVersion = CEC::LIBCEC_VERSION_CURRENT;
     config.bActivateSource = 0;
     config.callbacks = &callbacks;
 
     config.deviceTypes.Add(CEC::CEC_DEVICE_TYPE_RECORDING_DEVICE);
 
-    cout << "Loading libcec" << endl;
-    adapter = LibCecInitialise(&config);
+    cout << "Initialising CEC library" << endl;
+    CEC::ICECAdapter *adapter = LibCecInitialise(&config);
 
     if (adapter == NULL)
     {
         cout << "Failed to initialise CEC library" << endl;
     }
-    cout << "CEC parser initialised" << endl;
-
-    adapter->InitVideoStandalone();
-
-    CEC::cec_adapter_descriptor devices[10];
-    uint8_t deviceCount = adapter->DetectAdapters(devices, 10, NULL, true);
-    string port;
-    if (deviceCount <= 0)
-    {
-        cout << "No devices found" << endl;
-    }
     else
     {
-        cout << "Devices" << endl;
+        adapter->InitVideoStandalone();
 
-        for (int i = 0; i < deviceCount; i++)
+        cout << "Detecting CEC adapters" << endl;
+        CEC::cec_adapter_descriptor adapters[10];
+        uint8_t adapterCount = adapter->DetectAdapters(adapters, 10, NULL, true);
+
+        if (adapterCount <= 0)
         {
-            cout << i << ": " << devices[i].strComName << endl;
+            cout << "No CEC adapters found" << endl;
         }
+        else
+        {
+            for (int i = 0; i < adapterCount; i++)
+            {
+                cout << " - [" << i << "]: " << adapters[i].strComName << endl;
+            }
 
-        port = devices[0].strComName;
+            string port = adapters[0].strComName;
+
+            cout << "Opening CEC adapter at " << port << endl;
+
+            if (!adapter->Open(port.c_str()))
+            {
+                cout << "Failed to open CEC adapter" << endl;
+            }
+            else
+            {
+                GMainLoop *loop = g_main_loop_new(nullptr, FALSE);
+                GError *error = nullptr;
+
+                // Connect to the session bus
+                GDBusConnection *connection = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error);
+                if (error)
+                {
+                    cerr << "Error connecting to session bus: " << error->message << endl;
+                    g_error_free(error);
+                }
+                else
+                {
+                    // Create a proxy for the IdleMonitor service
+                    GDBusProxy *proxy = g_dbus_proxy_new_sync(
+                        connection,
+                        (GDBusProxyFlags)(G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START | G_DBUS_PROXY_FLAGS_DO_NOT_LOAD_PROPERTIES),
+                        nullptr,
+                        "org.gnome.ScreenSaver",  // Name of the remote object
+                        "/org/gnome/ScreenSaver", // Path
+                        "org.gnome.ScreenSaver",  // Interface
+                        nullptr,
+                        &error);
+
+                    if (error)
+                    {
+                        cerr << "Error creating proxy: " << error->message << endl;
+                        g_error_free(error);
+                        g_object_unref(connection);
+                    }
+                    else
+                    {
+                        // Connect to the screensaver event signal
+                        g_signal_connect(proxy, "g-signal", G_CALLBACK(on_screensaver_signal), adapter);
+
+                        cout << "Listening for screensaver events" << endl;
+
+                        // Start the main loop
+                        g_main_loop_run(loop);
+
+                        g_object_unref(proxy);
+                    }
+
+                    g_object_unref(connection);
+                }
+
+                // Wait for main loop to complete
+                g_main_loop_unref(loop);
+
+                // Clean up
+                adapter->Close();
+            }
+        }
     }
-
-    cout << "Opening device " << port << endl;
-
-    if (!adapter->Open(port.c_str()))
-    {
-        cout << "Failed to open device" << endl;
-        return -1;
-    }
-
-    GMainLoop *loop = g_main_loop_new(nullptr, FALSE);
-    GError *error = nullptr;
-
-    // Connect to the session bus
-    GDBusConnection *connection = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error);
-    if (error)
-    {
-        cerr << "Error connecting to session bus: " << error->message << endl;
-        g_error_free(error);
-        return 1;
-    }
-
-    // Create a proxy for the IdleMonitor service
-    GDBusProxy *proxy = g_dbus_proxy_new_sync(
-        connection,
-        (GDBusProxyFlags)(G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START | G_DBUS_PROXY_FLAGS_DO_NOT_LOAD_PROPERTIES),
-        nullptr,
-        "org.gnome.ScreenSaver",  // Name of the remote object
-        "/org/gnome/ScreenSaver", // Path
-        "org.gnome.ScreenSaver",  // Interface
-        nullptr,
-        &error);
-
-    if (error)
-    {
-        cerr << "Error creating proxy: " << error->message << endl;
-        g_error_free(error);
-        g_object_unref(connection);
-        return 1;
-    }
-
-    // Connect to the "ActiveChanged" signal
-    g_signal_connect(proxy, "g-signal", G_CALLBACK(on_active_changed), adapter);
-
-    cout << "Listening for screensaver events" << endl;
-
-    // Start the main loop
-    g_main_loop_run(loop);
-
-    // Clean up
-    adapter->Close();
 
     UnloadLibCec(adapter);
-    cout << "CEC parser unloaded" << endl;
-
-    g_object_unref(proxy);
-    g_object_unref(connection);
-    g_main_loop_unref(loop);
+    cout << "CEC library unloaded" << endl;
 
     return 0;
 }
