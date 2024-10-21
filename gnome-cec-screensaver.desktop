@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=GNOME CEC Screensaver
+Comment=Turn on and off your HDMI-CEC devices
+Exec=gnome-cec-screensaver
+Icon=org.gnome.Terminal
+Terminal=false
+Type=Application
+StartupNotify=true
+Categories=GNOME;
