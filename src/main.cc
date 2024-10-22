@@ -28,18 +28,33 @@
 #include <glibmm.h>
 
 using namespace std;
+using namespace Glib;
+using namespace Gio::DBus;
 
 // Globals
 CEC::ICECAdapter *cec = NULL;
 CEC::ICECCallbacks callbacks;
 CEC::libcec_configuration config;
-ofstream log_file_stream;
-
-const Glib::TimeZone tz = Glib::TimeZone::create_local();
+RefPtr<Proxy> screensaver_proxy;
+auto screensaver_active = false;
+const auto screen_address = (CEC::cec_logical_address)0;
+const auto tz = TimeZone::create_local();
 
 void log(const string &message)
 {
-    auto date_time_string = Glib::DateTime::create_now(tz).format_iso8601();
+    static ofstream log_file_stream;
+
+    if (!log_file_stream.is_open())
+    {
+        log_file_stream.open(get_home_dir() + "/.gnome-cec-screensaver.log", ios::out | ios::app);
+
+        if (!log_file_stream.is_open())
+        {
+            throw runtime_error("Failed to open log file");
+        }
+    }
+
+    auto date_time_string = DateTime::create_now(tz).format_iso8601();
     auto formatted_message = date_time_string + " - " + message + "\n";
     cout << formatted_message;
 
@@ -50,10 +65,13 @@ void log(const string &message)
     }
 }
 
+void log(const exception &ex)
+{
+    log(string("Exception: ") + ex.what());
+}
+
 void cec_log_message(void *, const CEC::cec_log_message *message)
 {
-    string level;
-
     if (message->level >= CEC::CEC_LOG_WARNING)
     {
         return;
@@ -102,7 +120,7 @@ void create_cec()
         // Display all the CEC adapters
         for (int i = 0; i < adapterCount; i++)
         {
-            log(Glib::ustring::compose(" - [%1]: %2", i, adapters[i].strComName));
+            log(ustring::compose(" - [%1]: %2", i, adapters[i].strComName));
         }
 
         // Select the first adapter by default.
@@ -117,7 +135,7 @@ void create_cec()
     }
     catch (const exception &e)
     {
-        log(string("Error: ") + e.what());
+        log(e);
 
         // If anything goes wrong, tear it all down so we know to try again later.
         destroy_cec();
@@ -150,9 +168,9 @@ void cec_alert(void *, const CEC::libcec_alert type, const CEC::libcec_parameter
     }
 }
 
-void on_signal_received(const Glib::ustring &sender_name,
-                        const Glib::ustring &signal_name,
-                        const Glib::VariantContainerBase &parameters)
+void on_signal_received(const ustring &sender_name,
+                        const ustring &signal_name,
+                        const VariantContainerBase &parameters)
 {
     try
     {
@@ -162,7 +180,7 @@ void on_signal_received(const Glib::ustring &sender_name,
         }
 
         // Get the first parameter which is the bool which indicates if the screensaver is active or not.
-        auto screensaverActive = Glib::VariantBase::cast_dynamic<Glib::Variant<bool>>(parameters.get_child(0)).get();
+        screensaver_active = VariantBase::cast_dynamic<Variant<bool>>(parameters.get_child(0)).get();
 
         // Create the CEC adapter if it hasn't been already.
         if (cec == NULL)
@@ -174,24 +192,54 @@ void on_signal_received(const Glib::ustring &sender_name,
         if (cec != NULL)
         {
             // Turn TV off if screensaver is active and turn it on when not active.
-            if (screensaverActive)
+            if (screensaver_active)
             {
                 log("Sending standby");
-                cec->StandbyDevices((CEC::cec_logical_address)0);
+                if (!cec->StandbyDevices(screen_address))
+                {
+                    throw runtime_error("Standby failed");
+                }
             }
             else
             {
                 log("Sending power on");
-                cec->PowerOnDevices((CEC::cec_logical_address)0);
+                cec->PowerOnDevices(screen_address);
             }
         }
     }
     catch (const exception &e)
     {
-        log(string("Error: ") + e.what());
+        log(e);
 
         destroy_cec();
     }
+}
+
+// Perform a periodic check to make sure that the TV is off if the screensaver is active.
+bool on_timeout()
+{
+    try
+    {
+        if (cec != NULL)
+        {
+            if (screensaver_active)
+            {
+                log("Sending another standby");
+                cec->StandbyDevices(screen_address);
+                if (!cec->StandbyDevices(screen_address))
+                {
+                    throw runtime_error("Standby failed");
+                }
+            }
+        }
+    }
+    catch (const exception &e)
+    {
+        log(e);
+        destroy_cec();
+    }
+
+    return true;
 }
 
 int main()
@@ -200,15 +248,8 @@ int main()
     {
         log("GNOME CEC Screensaver");
 
-        log_file_stream.open(Glib::get_home_dir() + "/.gnome-cec-screensaver.log", ios::out | ios::app);
-
-        if (!log_file_stream.is_open())
-        {
-            throw runtime_error("Failed to open log file");
-        }
-
         // Initialise Glib/Gio
-        Glib::init();
+        init();
         Gio::init();
 
         // Setup CEC
@@ -223,11 +264,10 @@ int main()
         config.clientVersion = CEC::LIBCEC_VERSION_CURRENT;
         config.bActivateSource = 1;
         config.callbacks = &callbacks;
-
         config.deviceTypes.Add(CEC::CEC_DEVICE_TYPE_RECORDING_DEVICE);
 
         // Connect to the D-Bus session bus.
-        auto connection = Gio::DBus::Connection::get_sync(Gio::DBus::BusType::SESSION);
+        auto connection = Connection::get_sync(BusType::SESSION);
 
         if (!connection)
         {
@@ -235,36 +275,35 @@ int main()
         }
 
         // Create a proxy for the ScreenSaver service
-        auto proxy = Gio::DBus::Proxy::create_sync(
+        screensaver_proxy = Proxy::create_sync(
             connection,               // D-Bus connection
             "org.gnome.ScreenSaver",  // Name of the remote object
             "/org/gnome/ScreenSaver", // Path
             "org.gnome.ScreenSaver"   // Interface
         );
 
-        if (!proxy)
+        if (!screensaver_proxy)
         {
             throw runtime_error("Failed to create proxy");
         }
 
         // Connect to the screensaver event signal and set the event handler.
-        proxy->signal_signal().connect(sigc::ptr_fun(&on_signal_received));
+        screensaver_proxy->signal_signal().connect(sigc::ptr_fun(&on_signal_received));
+        signal_timeout().connect(sigc::ptr_fun(&on_timeout), 10000);
 
         log("Listening for screensaver events");
 
         // Start the main application loop.
-        auto loop = Glib::MainLoop::create();
+        auto loop = MainLoop::create();
         loop->run();
     }
     catch (const exception &e)
     {
-        cerr << "Error: " << e.what() << endl;
+        log(e);
     }
 
     // Cleanup
     destroy_cec();
-
-    log_file_stream.close();
 
     return 0;
 }
