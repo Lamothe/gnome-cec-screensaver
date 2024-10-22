@@ -20,3 +20,7 @@ $(TARGET): $(SRCS)
 # Clean up build artifacts
 clean:
 	rm -f $(TARGET)
+
+install:
+	ln -s $PWD/gnome-cec-screensaver ~/.local/bin
+	cp gnome-cec-screensaver.desktop ~/.config/autostart

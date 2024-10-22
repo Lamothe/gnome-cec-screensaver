@@ -31,4 +31,6 @@ ln -s $PWD/gnome-cec-screensaver ~/.local/bin
 cp gnome-cec-screensaver.desktop ~/.config/autostart
 ```
 
+or use `make install`.
+
 I have only tested this with the [USB - CEC Adapter](https://www.pulse-eight.com/p/104/usb-hdmi-cec-adapter) from Pulse-Eight connected to my NVIDIA GPU on Fedora 40.
