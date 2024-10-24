@@ -46,7 +46,7 @@ void log(const string &message)
 
     if (!log_file_stream.is_open())
     {
-        log_file_stream.open(get_home_dir() + "/.gnome-cec-screensaver.log", ios::out | ios::app);
+        log_file_stream.open(get_home_dir() + "/.gnome-cec-screensaver.log", ios::out | ios::trunc);
 
         if (!log_file_stream.is_open())
         {
@@ -199,6 +199,11 @@ void on_signal_received(const ustring &sender_name,
                 {
                     throw runtime_error("Standby failed");
                 }
+
+                // I do not understand why this helps!
+                // If I don't do it, there is a much greater chance that the TV turns back on immediately.
+                log("Sleeping for 2 seconds");
+                this_thread::sleep_for(std::chrono::milliseconds(2000));
             }
             else
             {
@@ -213,33 +218,6 @@ void on_signal_received(const ustring &sender_name,
 
         destroy_cec();
     }
-}
-
-// Perform a periodic check to make sure that the TV is off if the screensaver is active.
-bool on_timeout()
-{
-    try
-    {
-        if (cec != NULL)
-        {
-            if (screensaver_active)
-            {
-                log("Sending another standby");
-                cec->StandbyDevices(screen_address);
-                if (!cec->StandbyDevices(screen_address))
-                {
-                    throw runtime_error("Standby failed");
-                }
-            }
-        }
-    }
-    catch (const exception &e)
-    {
-        log(e);
-        destroy_cec();
-    }
-
-    return true;
 }
 
 int main()
@@ -289,7 +267,6 @@ int main()
 
         // Connect to the screensaver event signal and set the event handler.
         screensaver_proxy->signal_signal().connect(sigc::ptr_fun(&on_signal_received));
-        signal_timeout().connect(sigc::ptr_fun(&on_timeout), 10000);
 
         log("Listening for screensaver events");
 

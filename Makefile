@@ -21,6 +21,6 @@ $(TARGET): $(SRCS)
 clean:
 	rm -f $(TARGET)
 
-install:
-	ln -s $PWD/gnome-cec-screensaver ~/.local/bin
+install: $(TARGET)
+	cp -f gnome-cec-screensaver ~/.local/bin
 	cp gnome-cec-screensaver.desktop ~/.config/autostart
