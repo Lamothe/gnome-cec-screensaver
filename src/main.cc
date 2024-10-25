@@ -179,7 +179,7 @@ void on_signal_received(const ustring &sender_name,
             return;
         }
 
-        // Get the first parameter which is the bool which indicates if the screensaver is active or not.
+        // Get the first parameter which is a bool that indicates if the screensaver is active or not.
         screensaver_active = VariantBase::cast_dynamic<Variant<bool>>(parameters.get_child(0)).get();
 
         // Create the CEC adapter if it hasn't been already.
@@ -188,7 +188,7 @@ void on_signal_received(const ustring &sender_name,
             create_cec();
         }
 
-        // If the cecAdapter is still NULL then we failed to create it, do nothing.
+        // If cecAdapter is still NULL then we failed to create it, do nothing.
         if (cec != NULL)
         {
             // Turn TV off if screensaver is active and turn it on when not active.
