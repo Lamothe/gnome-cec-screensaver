@@ -195,20 +195,15 @@ void on_signal_received(const ustring &sender_name,
             if (screensaver_active)
             {
                 log("Sending standby");
-                if (!cec->StandbyDevices(screen_address))
+                if (!cec->StandbyDevices())
                 {
                     throw runtime_error("Standby failed");
                 }
-
-                // I do not understand why this helps!
-                // If I don't do it, there is a much greater chance that the TV turns back on immediately.
-                log("Sleeping for 2 seconds");
-                this_thread::sleep_for(std::chrono::milliseconds(2000));
             }
             else
             {
                 log("Sending power on");
-                cec->PowerOnDevices(screen_address);
+                cec->PowerOnDevices();
             }
         }
     }
