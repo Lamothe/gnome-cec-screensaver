@@ -17,7 +17,7 @@ LDFLAGS += $(shell pkg-config --libs $(PKG_CONFIG_LIBS))
 $(TARGET): $(SRCS)
 	$(CXX) $(CXXFLAGS) -o $(TARGET) $(SRCS) $(LDFLAGS)
 
-# Clean up build artifacts
+# Clean up build artefacts
 clean:
 	rm -f $(TARGET)
 
