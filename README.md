@@ -1,8 +1,8 @@
 # About
 
-A screensaver for GNOME that will turn off and on your TV using a libcec compatible HDMI-CEC adapter.
+A screensaver for GNOME that will turn on and off your HDMI-CEC enabled devices using a libcec compatible HDMI-CEC adapter.
 The application hooks into GNOME's screensaver event and detects when it has been activated/deactivated.
-It makes an assumption that the TV is the only thing connected and defaults to sending the signal to address 0.
+All HDMI-CEC signals are broadcasted and are not device specific.
 
 # Install Prerequisites (Fedora)
 
