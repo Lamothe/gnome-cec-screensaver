@@ -35,9 +35,7 @@ using namespace Gio::DBus;
 CEC::ICECAdapter *cec = NULL;
 CEC::ICECCallbacks callbacks;
 CEC::libcec_configuration config;
-RefPtr<Proxy> screensaver_proxy;
-auto screensaver_active = false;
-const auto screen_address = (CEC::cec_logical_address)0;
+auto is_screensaver_active = false;
 const auto tz = TimeZone::create_local();
 
 void log(const string &message)
@@ -168,9 +166,9 @@ void cec_alert(void *, const CEC::libcec_alert type, const CEC::libcec_parameter
     }
 }
 
-void on_signal_received(const ustring &sender_name,
-                        const ustring &signal_name,
-                        const VariantContainerBase &parameters)
+void on_screensaver_signal(const ustring &sender_name,
+                           const ustring &signal_name,
+                           const VariantContainerBase &parameters)
 {
     try
     {
@@ -180,7 +178,7 @@ void on_signal_received(const ustring &sender_name,
         }
 
         // Get the first parameter which is a bool that indicates if the screensaver is active or not.
-        screensaver_active = VariantBase::cast_dynamic<Variant<bool>>(parameters.get_child(0)).get();
+        is_screensaver_active = VariantBase::cast_dynamic<Variant<bool>>(parameters.get_child(0)).get();
 
         // Create the CEC adapter if it hasn't been already.
         if (cec == NULL)
@@ -188,11 +186,11 @@ void on_signal_received(const ustring &sender_name,
             create_cec();
         }
 
-        // If cecAdapter is still NULL then we failed to create it, do nothing.
+        // If cec is still NULL then we failed to create it, do nothing.
         if (cec != NULL)
         {
             // Turn TV off if screensaver is active and turn it on when not active.
-            if (screensaver_active)
+            if (is_screensaver_active)
             {
                 log("Sending standby");
                 if (!cec->StandbyDevices())
@@ -213,6 +211,32 @@ void on_signal_received(const ustring &sender_name,
 
         destroy_cec();
     }
+}
+
+// Send a periodic standby to make sure that the TV is off if the screensaver is active.
+bool on_timeout()
+{
+    try
+    {
+        if (cec != NULL)
+        {
+            if (is_screensaver_active)
+            {
+                log("Sending standby");
+                if (!cec->StandbyDevices())
+                {
+                    throw runtime_error("Standby failed");
+                }
+            }
+        }
+    }
+    catch (const exception &e)
+    {
+        log(e);
+        destroy_cec();
+    }
+
+    return true;
 }
 
 int main()
@@ -248,7 +272,7 @@ int main()
         }
 
         // Create a proxy for the ScreenSaver service
-        screensaver_proxy = Proxy::create_sync(
+        auto screensaver_proxy = Proxy::create_sync(
             connection,               // D-Bus connection
             "org.gnome.ScreenSaver",  // Name of the remote object
             "/org/gnome/ScreenSaver", // Path
@@ -261,7 +285,10 @@ int main()
         }
 
         // Connect to the screensaver event signal and set the event handler.
-        screensaver_proxy->signal_signal().connect(sigc::ptr_fun(&on_signal_received));
+        screensaver_proxy->signal_signal().connect(sigc::ptr_fun(&on_screensaver_signal));
+
+        // Periodically send standbys incase the the TV didn't obey previous attempts.
+        signal_timeout().connect(sigc::ptr_fun(&on_timeout), 60000);
 
         log("Listening for screensaver events");
 
