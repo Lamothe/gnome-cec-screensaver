@@ -150,18 +150,34 @@ void cec_command(void *, const CEC::cec_command *_)
     // Not used.
 }
 
-void cec_alert(void *, const CEC::libcec_alert type, const CEC::libcec_parameter _)
+void cec_alert(void *, const CEC::libcec_alert type, const CEC::libcec_parameter parameter)
 {
     switch (type)
     {
     case CEC::CEC_ALERT_CONNECTION_LOST:
-        log("Connection lost");
+        log("Alert: CEC_ALERT_CONNECTION_LOST");
 
         // Tear it all down so we know to retry later.
         destroy_cec();
 
         break;
+
+    case CEC::CEC_ALERT_PHYSICAL_ADDRESS_ERROR:
+        log("Alert: CEC_ALERT_PHYSICAL_ADDRESS_ERROR");
+
+        if (parameter.paramType == CEC::CEC_PARAMETER_TYPE_STRING)
+        {
+            log(ustring::compose("Parameter: %1", (char *)parameter.paramData));
+        }
+        else
+        {
+            log("Unknown parameter type");
+        }
+
+        break;
+
     default:
+        log(ustring::compose("Alert: %1", type));
         break;
     }
 }
@@ -193,15 +209,18 @@ void on_screensaver_signal(const ustring &sender_name,
             if (is_screensaver_active)
             {
                 log("Sending standby");
-                if (!cec->StandbyDevices())
+                if (!cec->StandbyDevices(CEC::cec_logical_address::CECDEVICE_TV))
                 {
                     throw runtime_error("Standby failed");
                 }
             }
             else
             {
+                log("Setting to default physical address.");
+                cec->SetPhysicalAddress();
+
                 log("Sending power on");
-                cec->PowerOnDevices();
+                cec->PowerOnDevices(CEC::cec_logical_address::CECDEVICE_TV);
             }
         }
     }
@@ -220,10 +239,13 @@ bool on_timeout()
     {
         if (cec != NULL)
         {
-            if (is_screensaver_active)
+            auto power_status = cec->GetDevicePowerStatus(CEC::cec_logical_address::CECDEVICE_TV);
+            auto is_at_standby = power_status == CEC::cec_power_status::CEC_POWER_STATUS_STANDBY || power_status == CEC::cec_power_status::CEC_POWER_STATUS_IN_TRANSITION_ON_TO_STANDBY;
+
+            if (is_screensaver_active && !is_at_standby)
             {
-                log("Sending standby");
-                if (!cec->StandbyDevices())
+                log("Sending another standby");
+                if (!cec->StandbyDevices(CEC::cec_logical_address::CECDEVICE_TV))
                 {
                     throw runtime_error("Standby failed");
                 }
@@ -246,7 +268,7 @@ int main()
         log("GNOME CEC Screensaver");
 
         // Initialise Glib/Gio
-        init();
+        Glib::init();
         Gio::init();
 
         // Setup CEC
@@ -259,9 +281,10 @@ int main()
         config.Clear();
         snprintf(config.strDeviceName, LIBCEC_OSD_NAME_SIZE, Glib::get_host_name().c_str());
         config.clientVersion = CEC::LIBCEC_VERSION_CURRENT;
-        config.bActivateSource = 1;
+        config.bActivateSource = 0;
         config.callbacks = &callbacks;
-        config.deviceTypes.Add(CEC::CEC_DEVICE_TYPE_RECORDING_DEVICE);
+        // config.deviceTypes.Add(CEC::CEC_DEVICE_TYPE_RECORDING_DEVICE);
+        config.deviceTypes.types[0] = CEC::CEC_DEVICE_TYPE_PLAYBACK_DEVICE;
 
         // Connect to the D-Bus session bus.
         auto connection = Connection::get_sync(BusType::SESSION);
@@ -288,7 +311,7 @@ int main()
         screensaver_proxy->signal_signal().connect(sigc::ptr_fun(&on_screensaver_signal));
 
         // Periodically send standbys incase the the TV didn't obey previous attempts.
-        signal_timeout().connect(sigc::ptr_fun(&on_timeout), 60000);
+        signal_timeout().connect(sigc::ptr_fun(&on_timeout), 10000);
 
         log("Listening for screensaver events");
 
