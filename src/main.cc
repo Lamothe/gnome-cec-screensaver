@@ -216,9 +216,6 @@ void on_screensaver_signal(const ustring &sender_name,
             }
             else
             {
-                log("Setting to default physical address.");
-                cec->SetPhysicalAddress();
-
                 log("Sending power on");
                 cec->PowerOnDevices(CEC::cec_logical_address::CECDEVICE_TV);
             }
@@ -281,10 +278,8 @@ int main()
         config.Clear();
         snprintf(config.strDeviceName, LIBCEC_OSD_NAME_SIZE, Glib::get_host_name().c_str());
         config.clientVersion = CEC::LIBCEC_VERSION_CURRENT;
-        config.bActivateSource = 0;
         config.callbacks = &callbacks;
-        // config.deviceTypes.Add(CEC::CEC_DEVICE_TYPE_RECORDING_DEVICE);
-        config.deviceTypes.types[0] = CEC::CEC_DEVICE_TYPE_PLAYBACK_DEVICE;
+        config.deviceTypes.Add(CEC::CEC_DEVICE_TYPE_RECORDING_DEVICE);
 
         // Connect to the D-Bus session bus.
         auto connection = Connection::get_sync(BusType::SESSION);
@@ -313,6 +308,7 @@ int main()
         // Periodically send standbys incase the the TV didn't obey previous attempts.
         signal_timeout().connect(sigc::ptr_fun(&on_timeout), 10000);
 
+        create_cec();
         log("Listening for screensaver events");
 
         // Start the main application loop.
