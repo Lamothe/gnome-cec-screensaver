@@ -22,5 +22,7 @@ clean:
 	rm -f $(TARGET)
 
 install: $(TARGET)
+	mkdir -p ~/.local/bin
 	cp -f gnome-cec-screensaver ~/.local/bin
+	mkdir -p ~/.config/autostart
 	cp gnome-cec-screensaver.desktop ~/.config/autostart
