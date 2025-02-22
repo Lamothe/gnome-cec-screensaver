@@ -302,7 +302,7 @@ int main()
             throw runtime_error("Failed to create proxy");
         }
 
-        // Connect to the screensaver event signal and set the event handler.
+        // Connect to the ScreenSaver event signal and set the event handler.
         screensaver_proxy->signal_signal().connect(sigc::ptr_fun(&on_screensaver_signal));
 
         // Periodically send standbys incase the the TV didn't obey previous attempts.
