@@ -28,4 +28,4 @@ This will put the binary in the user's bin directory so it can be run on the com
 
 The application will log to the command line as well as `.gnome-cec-screensaver.log` in the user's home direcory.
 
-I have only tested this with the [USB - CEC Adapter](https://www.pulse-eight.com/p/104/usb-hdmi-cec-adapter) from Pulse-Eight connected to my NVIDIA GPU on Fedora 40/41.
+I have only tested this with the [USB - CEC Adapter](https://www.pulse-eight.com/p/104/usb-hdmi-cec-adapter) from Pulse-Eight connected to my NVIDIA GPU on Fedora 40/41/42.
